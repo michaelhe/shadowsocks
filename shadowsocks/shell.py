@@ -318,6 +318,13 @@ def get_config(is_local):
     config['tunnel_remote_port'] = config.get('tunnel_remote_port', 53)
     config['tunnel_port'] = config.get('tunnel_port', 53)
     config['dns_server'] = config.get('dns_server', None)
+    
+    config['db_host'] = config.get('db_host', '127.0.0.1')
+    config['db_port'] = config.get('db_port', 3306)
+    config['db_user'] = config.get('db_user', 'test')
+    config['db_passwd'] = config.get('db_passwd', 'test')
+    config['db_name'] = config.get('db_name', 'db_ssserver')
+    
 
     logging.getLogger('').handlers = []
     logging.addLevelName(VERBOSE_LEVEL, 'VERBOSE')
