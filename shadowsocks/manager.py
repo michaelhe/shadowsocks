@@ -25,7 +25,7 @@ import logging
 import json
 import collections
 
-from shadowsocks import common, eventloop, tcprelay, udprelay, asyncdns, shell
+from shadowsocks import common, eventloop, tcprelay, udprelay, asyncdns, shell, LightMysql
 
 
 BUF_SIZE = 1506
@@ -40,6 +40,16 @@ class Manager(object):
         self._loop = eventloop.EventLoop()
         self._dns_resolver = asyncdns.DNSResolver()
         self._dns_resolver.add_to_loop(self._loop)
+   
+        dbconfig = {
+            'host': config['db_host'],
+            'port': config['db_port'],
+            'user': config['db_user'],
+            'passwd': config['db_passwd'],
+            'db': config['db_name'],
+            'charset':'utf8'}
+
+        self._db = LightMysql(dbconfig)
 
         self._statistics = collections.defaultdict(int)
         self._control_client_addr = None
@@ -69,12 +79,12 @@ class Manager(object):
                        eventloop.POLL_IN, self)
         self._loop.add_periodic(self.handle_periodic)
 
-        port_password = config['port_password']
         del config['port_password']
-        for port, password in port_password.items():
+        port_passwords = self._db.select('select port,passwd from t_ss_port where enable=1')
+        for port_password in port_passwords:
             a_config = config.copy()
-            a_config['server_port'] = int(port)
-            a_config['password'] = password
+            a_config['server_port'] = int(port_password['port'])
+            a_config['password'] = port_password['passwd']
             self.add_port(a_config)
 
     def add_port(self, config):
