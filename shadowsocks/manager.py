@@ -160,6 +160,7 @@ class Manager(object):
                 # use compact JSON format (without space)
                 data = common.to_bytes(json.dumps(data_dict,
                                                   separators=(',', ':')))
+                logging.info('stat is : %s' % data)
                 self._send_control_data(b'stat: ' + data)
 
         for k, v in self._statistics.items():
