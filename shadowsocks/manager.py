@@ -49,7 +49,7 @@ class Manager(object):
             'db': config['db_name'],
             'charset':'utf8'}
 
-        self._db = LightMysql(dbconfig)
+        self._db = LightMysql.LightMysql(dbconfig)
 
         self._statistics = collections.defaultdict(int)
         self._control_client_addr = None
