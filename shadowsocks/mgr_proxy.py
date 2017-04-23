@@ -143,6 +143,7 @@ class MgrProxy(object):
 
     def send_data(self, dict_data):
         # dict_data = { port : flow_int }
+        logging.debug('send stat(%s) to server' % dict_data)
         send_msg = json.dumps(dict_data)
         send_cmd = 2000
         send_header = MgrProxyHeader.pack_head(send_msg, send_cmd)        
