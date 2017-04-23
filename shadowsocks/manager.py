@@ -25,7 +25,8 @@ import logging
 import json
 import collections
 
-from shadowsocks import common, eventloop, tcprelay, udprelay, asyncdns, shell, LightMysql
+from shadowsocks import common, eventloop, tcprelay, udprelay, asyncdns, \
+    shell, mgr_proxy
 
 
 BUF_SIZE = 1506
@@ -40,51 +41,29 @@ class Manager(object):
         self._loop = eventloop.EventLoop()
         self._dns_resolver = asyncdns.DNSResolver()
         self._dns_resolver.add_to_loop(self._loop)
-   
-        dbconfig = {
-            'host': config['db_host'],
-            'port': config['db_port'],
-            'user': config['db_user'],
-            'passwd': config['db_passwd'],
-            'db': config['db_name'],
-            'charset':'utf8'}
-
-        self._db = LightMysql.LightMysql(dbconfig)
-
         self._statistics = collections.defaultdict(int)
         self._control_client_addr = None
         try:
             manager_address = config['manager_address']
-            if ':' in manager_address:
-                addr = manager_address.rsplit(':', 1)
-                addr = addr[0], int(addr[1])
-                addrs = socket.getaddrinfo(addr[0], addr[1])
-                if addrs:
-                    family = addrs[0][0]
-                else:
-                    logging.error('invalid address: %s', manager_address)
-                    exit(1)
-            else:
-                addr = manager_address
-                family = socket.AF_UNIX
-            self._control_socket = socket.socket(family,
-                                                 socket.SOCK_DGRAM)
-            self._control_socket.bind(addr)
-            self._control_socket.setblocking(False)
-        except (OSError, IOError) as e:
+            addr = manager_address.rsplit(':', 1)
+            addr = addr[0], int(addr[1])
+
+            # add by michael @2017-04-23
+            self._mgr_proxy = mgr_proxy.MgrProxy(addr[0],addr[1])
+            self._mgr_proxy.run()
+        except Exception, e:
             logging.error(e)
-            logging.error('can not bind to manager address')
+            logging.error('can not connect to manager address')
             exit(1)
-        self._loop.add(self._control_socket,
-                       eventloop.POLL_IN, self)
+
         self._loop.add_periodic(self.handle_periodic)
 
+        port_password = config['port_password']
         del config['port_password']
-        port_passwords = self._db.select('select port,passwd from t_ss_port where enable=1')
-        for port_password in port_passwords:
+        for port, password in port_password.items():
             a_config = config.copy()
-            a_config['server_port'] = int(port_password['port'])
-            a_config['password'] = port_password['passwd']
+            a_config['server_port'] = int(port)
+            a_config['password'] = password
             self.add_port(a_config)
 
     def add_port(self, config):
@@ -116,29 +95,29 @@ class Manager(object):
             logging.error("server not exist at %s:%d" % (config['server'],
                                                          port))
 
-    def handle_event(self, sock, fd, event):
-        if sock == self._control_socket and event == eventloop.POLL_IN:
-            data, self._control_client_addr = sock.recvfrom(BUF_SIZE)
-            parsed = self._parse_command(data)
-            if parsed:
-                command, config = parsed
-                a_config = self._config.copy()
-                if config:
-                    # let the command override the configuration file
-                    a_config.update(config)
-                if 'server_port' not in a_config:
-                    logging.error('can not find server_port in config')
-                else:
-                    if command == 'add':
-                        self.add_port(a_config)
-                        self._send_control_data(b'ok')
-                    elif command == 'remove':
-                        self.remove_port(a_config)
-                        self._send_control_data(b'ok')
-                    elif command == 'ping':
-                        self._send_control_data(b'pong')
-                    else:
-                        logging.error('unknown command %s', command)
+    #def handle_event(self, sock, fd, event):
+    #    if sock == self._control_socket and event == eventloop.POLL_IN:
+    #        data, self._control_client_addr = sock.recvfrom(BUF_SIZE)
+    #        parsed = self._parse_command(data)
+    #        if parsed:
+    #            command, config = parsed
+    #            a_config = self._config.copy()
+    #            if config:
+    #                # let the command override the configuration file
+    #                a_config.update(config)
+    #            if 'server_port' not in a_config:
+    #                logging.error('can not find server_port in config')
+    #            else:
+    #                if command == 'add':
+    #                    self.add_port(a_config)
+    #                    self._send_control_data(b'ok')
+    #                elif command == 'remove':
+    #                    self.remove_port(a_config)
+    #                    self._send_control_data(b'ok')
+    #                elif command == 'ping':
+    #                    self._send_control_data(b'pong')
+    #                else:
+    #                    logging.error('unknown command %s', command)
 
     def _parse_command(self, data):
         # commands:
@@ -161,45 +140,55 @@ class Manager(object):
     def stat_callback(self, port, data_len):
         self._statistics[port] += data_len
 
+
     def handle_periodic(self):
         r = {}
-        i = 0
-
-        def send_data(data_dict):
-            if data_dict:
-                # use compact JSON format (without space)
-                data = common.to_bytes(json.dumps(data_dict,
-                                                  separators=(',', ':')))
-                logging.info('stat is : %s' % data)
-                self._send_control_data(b'stat: ' + data)
 
         for k, v in self._statistics.items():
             r[k] = v
-            i += 1
-            # split the data into segments that fit in UDP packets
-            if i >= STAT_SEND_LIMIT:
-                send_data(r)
-                r.clear()
-                i = 0
-        if len(r) > 0:
-            send_data(r)
+            self._mgr_proxy.send_data(r)
+            r.clear()
         self._statistics.clear()
 
-    def _send_control_data(self, data):
-        if not self._control_client_addr:
-            return
+    #def handle_periodic(self):
+    #    r = {}
+    #    i = 0
+    #
+    #    def send_data(data_dict):
+    #        if data_dict:
+    #            # use compact JSON format (without space)
+    #            data = common.to_bytes(json.dumps(data_dict,
+    #                                              separators=(',', ':')))
+    #            logging.info('stat is : %s' % data)
+    #            self._send_control_data(b'stat: ' + data)
+    #
+    #    for k, v in self._statistics.items():
+    #        r[k] = v
+    #        i += 1
+    #        # split the data into segments that fit in UDP packets
+    #        if i >= STAT_SEND_LIMIT:
+    #            send_data(r)
+    #            r.clear()
+    #            i = 0
+    #    if len(r) > 0:
+    #        send_data(r)
+    #    self._statistics.clear()
 
-        try:
-            self._control_socket.sendto(data, self._control_client_addr)
-        except (socket.error, OSError, IOError) as e:
-            error_no = eventloop.errno_from_exception(e)
-            if error_no in (errno.EAGAIN, errno.EINPROGRESS,
-                            errno.EWOULDBLOCK):
-                return
-            else:
-                shell.print_exception(e)
-                if self._config['verbose']:
-                    traceback.print_exc()
+    #def _send_control_data(self, data):
+    #    if not self._control_client_addr:
+    #        return
+    #
+    #    try:
+    #        self._control_socket.sendto(data, self._control_client_addr)
+    #    except (socket.error, OSError, IOError) as e:
+    #        error_no = eventloop.errno_from_exception(e)
+    #        if error_no in (errno.EAGAIN, errno.EINPROGRESS,
+    #                        errno.EWOULDBLOCK):
+    #            return
+    #        else:
+    #            shell.print_exception(e)
+    #            if self._config['verbose']:
+    #                traceback.print_exc()
 
     def run(self):
         self._loop.run()
