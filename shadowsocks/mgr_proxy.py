@@ -76,10 +76,11 @@ class HeartBeatThd(threading.Thread):
             self.sock.close()
             logging.error('%s thread is dead' % self.name)
 
-class MgrProxy(object):
+class MgrProxy(threading.Thread):
 
     def __init__(self, host, port):
-
+        threading.Thread.__init__(self)
+        self.setDaemon(True)
         self.host = host
         self.port = port
         self._head_size = MgrProxyHeader.get_head_size()
@@ -155,7 +156,7 @@ class MgrProxy(object):
             self.doPing()
             self.waitControl()           
         except Exception,e:
-            logging.info('Main exception : %s' % e)
+            logging.info('MgrProxy run exception : %s' % e)
             self.retry()
         
     def retry(self):

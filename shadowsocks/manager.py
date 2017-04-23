@@ -50,7 +50,7 @@ class Manager(object):
 
             # add by michael @2017-04-23
             self._mgr_proxy = mgr_proxy.MgrProxy(addr[0],addr[1])
-            self._mgr_proxy.run()
+            self._mgr_proxy.start()
         except Exception, e:
             logging.error(e)
             logging.error('can not connect to manager address')
