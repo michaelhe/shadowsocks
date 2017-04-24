@@ -95,7 +95,7 @@ class MgrProxy(threading.Thread):
     def doConnect(self):
         logging.info('Connect to %s:%s...' % (self.host, self.port))
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock.settimeout(10)
+        self.sock.settimeout(60)
         self.sock.connect((self.host, self.port))
         logging.info('Connected , sock is %s ' % self.sock )
 
