@@ -22,6 +22,11 @@ import threading
 import logging
 import json
 
+# the heart beat time
+TIMEOUT_HB = 30
+# the retry time
+TIMEOUT_RETRY = 30
+
 class MgrProxyHeader(object):
     """
     定义包的结构，使用struct来打包
@@ -70,7 +75,7 @@ class HeartBeatThd(threading.Thread):
                 send_cmd = 1001
                 send_header = MgrProxyHeader.pack_head(send_msg, send_cmd)
                 self.sock.sendall(send_header+send_msg)
-                time.sleep(5)
+                time.sleep(TIMEOUT_HB)
         except Exception,e:
             logging.error('HB thread found exception : %s' % e)
             self.sock.close()
@@ -162,8 +167,8 @@ class MgrProxy(threading.Thread):
     def retry(self):
         logging.error('lose connect, wait 5s and retry...') 
         self.delete()
-        time.sleep(5)
-        self.run()           
+        time.sleep(TIMEOUT_RETRY)
+        self.run()   
 
     def delete(self):
         logging.info('delete this client ... ')
